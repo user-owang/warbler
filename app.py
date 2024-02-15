@@ -5,7 +5,7 @@ from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy.exc import IntegrityError
 
 from forms import UserAddForm, LoginForm, MessageForm, EditProfileForm
-from models import db, connect_db, User, Message
+from models import db, connect_db, User, Message, Likes
 
 CURR_USER_KEY = "curr_user"
 
@@ -141,11 +141,31 @@ def list_users():
     return render_template('users/index.html', users=users)
 
 
+@app.route('/users/add_like/<int:msg_id>', methods=['POST'])
+def like_or_unlike(msg_id):
+    if not g.user:
+        flash('Must be logged in to like a warble.', 'danger')
+        return redirect('/login')
+    likes = [l.id for l in g.user.likes]
+    prev = request.referrer
+    if msg_id in likes:
+        g.user.likes = [l for l in g.user.likes if l.id != msg_id]
+    else:
+        g.user.likes.append(Message.query.get_or_404(msg_id))
+    
+    db.session.commit()
+    return redirect(prev)
+
+
 @app.route('/users/<int:user_id>')
 def users_show(user_id):
     """Show user profile."""
 
     user = User.query.get_or_404(user_id)
+    if not g.user:
+        likes = []
+    else:
+        likes = [l.id for l in g.user.likes]
 
     # snagging messages in order from the database;
     # user.messages won't be in order by default
@@ -155,7 +175,15 @@ def users_show(user_id):
                 .order_by(Message.timestamp.desc())
                 .limit(100)
                 .all())
-    return render_template('users/show.html', user=user, messages=messages)
+    return render_template('users/show.html', user=user, messages=messages, likes=likes)
+
+
+@app.route('/users/<int:user_id>/likes')
+def show_likes(user_id):
+    user = User.query.get_or_404(user_id)
+    messages = user.likes
+    likes = [m.id for m in messages]
+    return render_template('users/likes.html', messages=messages, user=user, likes=likes)
 
 
 @app.route('/users/<int:user_id>/following')
@@ -290,7 +318,7 @@ def messages_add():
 def messages_show(message_id):
     """Show a message."""
 
-    msg = Message.query.get(message_id)
+    msg = Message.query.get_or_404(message_id)
     return render_template('messages/show.html', message=msg)
 
 
@@ -301,8 +329,13 @@ def messages_destroy(message_id):
     if not g.user:
         flash("Access unauthorized.", "danger")
         return redirect("/")
-
+    
     msg = Message.query.get(message_id)
+    
+    if g.user.id != msg.user_id:
+        flash("Access unauthorized.", "danger")
+        return redirect("/")
+    
     db.session.delete(msg)
     db.session.commit()
 
@@ -322,13 +355,16 @@ def homepage():
     """
 
     if g.user:
+        likes = [l.id for l in g.user.likes]
+        following_ids = [f.id for f in g.user.following] + [g.user.id]
         messages = (Message
                     .query
+                    .filter(Message.user_id.in_(following_ids))
                     .order_by(Message.timestamp.desc())
                     .limit(100)
                     .all())
 
-        return render_template('home.html', messages=messages)
+        return render_template('home.html', messages=messages, likes=likes)
 
     else:
         return render_template('home-anon.html')

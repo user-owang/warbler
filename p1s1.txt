@@ -4,3 +4,8 @@ models diagram:
 
 follows table has 2 foreign keys because there are 2 users in different roles. we need to be able to represent user a following user b AND user b not following user a
 
+step 7
+logged in user is being tracked 2 ways: the session cookie is storing the logged in user.id and the global variable g.user is assigned to the logged in user
+it is a global variable obj that can be assigned in one function and retrieved in another
+it saves us from having to pull the user.id to then query the logged in user object everytime
+it is a decorator to signify that the following function should run prior to every request
